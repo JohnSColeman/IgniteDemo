@@ -1,64 +1,79 @@
 ﻿using Apache.Ignite.Core;
 using Apache.Ignite.Core.Cache;
 using Apache.Ignite.Core.Cache.Event;
-using Apache.Ignite.Core.Cache.Query;
 using Apache.Ignite.Core.Cache.Query.Continuous;
 using IgniteDemo.model;
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace IgniteDemo
 {
+    /**
+     * Computes transaction fees using Ignites event handling.
+     */
     public class FeeComputer
     {
-        private readonly Apache.Ignite.Core.Cache.ICache<int, SimpleTransaction> _cache;
+        private readonly ICache<int, SimpleTransaction> _cache;
+
+        public static void ComputeFees(SimpleTransaction simpleTransaction)
+        {
+            simpleTransaction.FeeAmount = simpleTransaction.ChargeAmount * 0.015m;
+        }
 
         public FeeComputer(IIgnite ignite)
         {
             this._cache = ignite.GetCache<int, SimpleTransaction>("SimpleTransactions");
         }
 
+        /** Run continuous query to capture update events. */
         public void Execute()
         {
             Console.WriteLine("running consumer...");
-            var eventListener = new EventListener();
-            var qry = new ContinuousQuery<int, SimpleTransaction>(eventListener);
-            var initialQry = new ScanQuery<int, SimpleTransaction>(new InitialFilter());
-            using (var queryHandle = _cache.QueryContinuous(qry, initialQry))
+            var listener = new CacheEventListener();
+            listener.OnCacheEntryEvent += a_ComputeFeesHandler;
+            var qry = new ContinuousQuery<int, SimpleTransaction>(listener,
+                new EventStatusEventFilter(0));
+            using (_cache.QueryContinuous(qry))
             {
-                foreach (var entry in queryHandle.GetInitialQueryCursor())
+                Task.Delay(10000).Wait(); // need to keep query running
+            }
+        }
+
+        /** Calculate the fees and update transaction state to 1. */
+        private void a_ComputeFeesHandler(object sender, SimpleTransaction simpleTransaction)
+        {
+            ComputeFees(simpleTransaction);
+            simpleTransaction.EventStatus = 1;
+            _cache.Put(simpleTransaction.Id, simpleTransaction);
+        }
+
+        private class CacheEventListener : ICacheEntryEventListener<int, SimpleTransaction>
+        {
+            public event EventHandler<SimpleTransaction> OnCacheEntryEvent;
+
+            public void OnEvent(IEnumerable<ICacheEntryEvent<int, SimpleTransaction>> evts)
+            {
+                foreach (var cacheEntryEvent in evts)
                 {
-                    var simpleTransaction = entry.Value;
-                    ComputeFees(simpleTransaction);
-                    simpleTransaction.EventStatus = 1;
-                    _cache.Put(simpleTransaction.Id, simpleTransaction);
-                    Console.WriteLine("computed: " + simpleTransaction);
+                    OnCacheEntryEvent(this, cacheEntryEvent.Value);
                 }
             }
         }
 
-        private class EventListener : ICacheEntryEventListener<int, SimpleTransaction>
+        private class EventStatusEventFilter : ICacheEntryEventFilter<int, SimpleTransaction>
         {
-            public void OnEvent(IEnumerable<ICacheEntryEvent<int, SimpleTransaction>> evts)
-            {
-                foreach (var evt in evts)
-                    Console.WriteLine($"{evt.Value.Id}: {evt.Value.EventStatus}");
-                // perform computation?
-            }
-        }
+            private readonly byte _eventStatus;
 
-        public class InitialFilter : ICacheEntryFilter<int, SimpleTransaction>
-        {
-            public bool Invoke(ICacheEntry<int, SimpleTransaction> entry)
+            public EventStatusEventFilter(byte eventStatus)
             {
-                Console.WriteLine("Invoke");
-                return entry.Value.EventStatus == 0;
+                _eventStatus = eventStatus;
             }
-        }
 
-        private void ComputeFees(SimpleTransaction simpleTransaction)
-        {
-            simpleTransaction.FeeAmount = simpleTransaction.ChargeAmount * 0.015m;
+            public bool Evaluate(ICacheEntryEvent<int, SimpleTransaction> evt)
+            {
+                return evt.Value.EventStatus == _eventStatus;
+            }
         }
     }
 }

@@ -1,5 +1,5 @@
 ﻿using Apache.Ignite.Core;
-using Apache.Ignite.Core.Cache;
+using Apache.Ignite.Core.Cache.Configuration;
 using IgniteDemo.model;
 using System;
 using System.Threading;
@@ -13,14 +13,31 @@ namespace IgniteDemo
             Console.WriteLine("Ignite demo...");
             using (var ignite = Ignition.Start())
             {
-                ICache<int, SimpleTransaction> cache = ignite.GetOrCreateCache<int, SimpleTransaction>("SimpleTransactions");
+                var factory = new SimpleTransactionCacheStoreFactory();
+                QueryEntity[] entities =
+                {
+                    new QueryEntity(typeof(int), typeof(SimpleTransaction))
+                };
+                var cfg = new CacheConfiguration
+                {
+                    CacheStoreFactory = factory,
+                    CacheMode = CacheMode.Partitioned,
+                    OnheapCacheEnabled = true,
+                    ReadThrough = true,
+                    WriteThrough = true,
+                    WriteBehindEnabled = true,
+                    QueryEntities = entities,
+                    Name = "SimpleTransactions"
+                };
+                ignite.AddCacheConfiguration(cfg);
+                ignite.GetOrCreateCache<int, SimpleTransaction>(cfg);
 
                 var producer = new ImportTransactions(ignite);
                 var consumer1 = new FeeComputer(ignite);
 
                 Thread consumer1Thread = new Thread(new ThreadStart(consumer1.Execute));
                 consumer1Thread.Start();
-          
+
                 Thread importerThread = new Thread(new ThreadStart(producer.Execute));
                 importerThread.Start();
 
@@ -28,7 +45,7 @@ namespace IgniteDemo
                 consumer1Thread.Join();
 
                 Console.ReadKey();
-            }          
+            }
         }
     }
 }

@@ -6,9 +6,19 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="model\SwipeTransaction.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Apache.Ignite" Version="2.7.0" />
-    <PackageReference Include="Apache.Ignite.EntityFramework" Version="2.7.0" />
     <PackageReference Include="Apache.Ignite.Linq" Version="2.7.0" />
+    <PackageReference Include="System.Data.SqlClient" Version="4.7.0-preview3.19128.7" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System">
+      <HintPath>System</HintPath>
+    </Reference>
   </ItemGroup>
 
 </Project>
